@@ -7,7 +7,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var UYGULAMA_SURUMU = '1.0.0';
+  var UYGULAMA_SURUMU = '1.1.0';
   var PAKET_TURU = 'kamera_tespit.saha_gps_paketi';
   var SONUC_TURU = 'kamera_tespit.saha_gps_sonucu';
   var JPEG_DESENI = /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/;
@@ -17,7 +17,14 @@
   };
   var VARSAYILAN_ESIKLER = { iyi_m: 5, kabul_m: 15, red_m: 30, olcum_suresi_s: 20 };
   var ILK_ATILAN = 2;
-  var HEDEF_OKUMA = 15;
+  // 1.1.0: GPS ilk 15-20 sn'de henuz oturmuyor (sahada ±10-15 m cikti). Olcum en az
+  // ASGARI_OLCUM_S surer (paketteki sure daha kisa olsa da), dogruluk iyiyse erken biter.
+  var HEDEF_OKUMA = 60;
+  var ASGARI_OLCUM_S = 45;
+  var ERKEN_MIN_OKUMA = 15;
+  var ERKEN_MIN_S = 15;
+  var ERKEN_SON_N = 5;
+  var OTURMA_MIN_OKUMA = 10;   // bu kadar okumadan sonra yalniz son yari (oturmus) kullanilir
 
   function sonluMu(x) { return typeof x === 'number' && isFinite(x); }
 
@@ -66,6 +73,8 @@
       return o && sonluMu(o.enlem) && sonluMu(o.boylam) && sonluMu(o.dogruluk) && o.dogruluk > 0;
     });
     if (!kalan.length) return [];
+    // Uzun olcumde ilk okumalar GPS oturmadan gelir; yalniz son yari kullanilir.
+    if (kalan.length >= OTURMA_MIN_OKUMA) kalan = kalan.slice(Math.floor(kalan.length / 2));
     var en = Infinity;
     kalan.forEach(function (o) { if (o.dogruluk < en) en = o.dogruluk; });
     var esik = Math.max(2 * en, 30);
@@ -328,7 +337,21 @@
   }
 
   /* ---------- olcum oturumu (geolocation enjekte edilebilir) ---------- */
-  // ayar: {sure_s, hedef_okuma, guvenli, setTimeout, clearTimeout, simdi}
+  // Paketteki olcum suresi ne olursa olsun en az ASGARI_OLCUM_S.
+  function etkinOlcumSuresi(esikler) {
+    var s = esikler && sonluMu(esikler.olcum_suresi_s) ? esikler.olcum_suresi_s : VARSAYILAN_ESIKLER.olcum_suresi_s;
+    return Math.max(s, ASGARI_OLCUM_S);
+  }
+
+  // Erken bitis: yeterli okuma + sure gectiyse ve son ERKEN_SON_N okumanin hepsi esik altindaysa.
+  function erkenBitebilirMi(okumalar, gecen_s, esik_m) {
+    if (!sonluMu(esik_m) || !okumalar || okumalar.length < ERKEN_MIN_OKUMA || !(gecen_s >= ERKEN_MIN_S)) return false;
+    return okumalar.slice(-ERKEN_SON_N).every(function (o) {
+      return o && sonluMu(o.dogruluk) && o.dogruluk > 0 && o.dogruluk <= esik_m;
+    });
+  }
+
+  // ayar: {sure_s, hedef_okuma, erken_esik_m, guvenli, setTimeout, clearTimeout, simdi}
   // cb: {onOkuma(okuma, tumu), onBitti(okumalar, bilgi), onHata({kod, mesaj})}
   function olcumBaslat(geo, ayar, cb) {
     ayar = ayar || {};
@@ -363,7 +386,8 @@
         var o = { enlem: c.latitude, boylam: c.longitude, dogruluk: c.accuracy, zaman: poz.timestamp };
         okumalar.push(o);
         cb.onOkuma(o, okumalar.slice());
-        if (okumalar.length >= hedef) bitir();
+        if (okumalar.length >= hedef ||
+            erkenBitebilirMi(okumalar, (simdi() - bas) / 1000, ayar.erken_esik_m)) bitir();
       }, function (h) {
         if (bitti) return;
         var kod = h && h.code;
@@ -381,7 +405,8 @@
     SINIRLAR: SINIRLAR, VARSAYILAN_ESIKLER: VARSAYILAN_ESIKLER, ILK_ATILAN: ILK_ATILAN, HEDEF_OKUMA: HEDEF_OKUMA,
     turkiyeKutusundaMi: turkiyeKutusundaMi, jpegDataUrlGecerliMi: jpegDataUrlGecerliMi,
     medyan: medyan, haversine: haversine, okumalariSuz: okumalariSuz, agirlikliOrtalama: agirlikliOrtalama,
-    olcumHesapla: olcumHesapla, dogrulukSinifi: dogrulukSinifi, paketDogrula: paketDogrula,
+    olcumHesapla: olcumHesapla, etkinOlcumSuresi: etkinOlcumSuresi, erkenBitebilirMi: erkenBitebilirMi,
+    ASGARI_OLCUM_S: ASGARI_OLCUM_S, dogrulukSinifi: dogrulukSinifi, paketDogrula: paketDogrula,
     isoYerel: isoYerel, slug: slug, dosyaAdi: dosyaAdi, yeniId: yeniId,
     olcumGecerliMi: olcumGecerliMi, sonucOlustur: sonucOlustur, hataMetni: hataMetni, olcumBaslat: olcumBaslat
   };

@@ -395,7 +395,9 @@
     function bosPanel() {
       bosalt(panel);
       panel.appendChild(dugme('📍 Konumu al', 'birincil buyuk', olcumeBasla));
-      panel.appendChild(el('p', { s: 'ipucu', t: 'Telefonu cihazın hemen yanında, gökyüzü açık bir yerde tutun. Ölçüm ' + esikler.olcum_suresi_s + ' sn sürer.' }));
+      panel.appendChild(el('p', { s: 'ipucu', t: 'Direğin dibinde değil, 2-3 m açıkta, gökyüzü açık bir yerde durun. ' +
+        'Ölçüm en fazla ' + M.etkinOlcumSuresi(esikler) + ' sn sürer; doğruluk ±' + esikler.iyi_m + ' m altına inerse erken biter. ' +
+        'Telefonun konumu (Hassas konum) açık olmalı.' }));
       var k = kopyaDugmesi();
       if (k) panel.appendChild(k);
     }
@@ -430,7 +432,7 @@
       var sayacYazi = el('div', { s: 'buyuk-sayi', t: 'Okuma: 0' });
       var anlikYazi = el('div', { t: 'Anlık doğruluk: bekleniyor…' });
       var sureCubuk = el('progress', { a: { max: '100', value: '0' } });
-      var sureMs = esikler.olcum_suresi_s * 1000, bas = Date.now();
+      var sureS = M.etkinOlcumSuresi(esikler), sureMs = sureS * 1000, bas = Date.now();
       var kilit = null, bitti = false;
       durum.olcuyor = true;
       panel.appendChild(el('p', { t: 'Konum alınıyor, cihazın yanında bekleyin…' }));
@@ -451,7 +453,7 @@
       }, 250);
 
       var oturum = M.olcumBaslat(navigator.geolocation, {
-        sure_s: esikler.olcum_suresi_s, guvenli: window.isSecureContext !== false
+        sure_s: sureS, erken_esik_m: esikler.iyi_m, guvenli: window.isSecureContext !== false
       }, {
         onOkuma: function (o, tumu) {
           sayacYazi.textContent = 'Okuma: ' + tumu.length;

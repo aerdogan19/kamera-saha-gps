@@ -159,7 +159,7 @@
       user_agent: 'UA' });
     esit(s.tur, 'kamera_tespit.saha_gps_sonucu'); esit(s.surum, 1); esit(s.paket_id, 'abcdef0123456789');
     esit(s.lokasyon, { id: 5, ad: 'DELİCE Şantiyesi' }); esit(s.olcen, 'Ali Veli');
-    esit(s.uygulama, { surum: '1.0.0', user_agent: 'UA' });
+    esit(s.uygulama, { surum: M.UYGULAMA_SURUMU, user_agent: 'UA' });
     esit(Object.keys(s.olcumler[0]), ['olcum_id', 'mac', 'enlem', 'boylam', 'dogruluk_m', 'okuma_sayisi', 'sure_s', 'zaman', 'kopya_kaynagi_mac', 'not', 'foto']);
     esit(Object.keys(s.ekstralar[0]), ['olcum_id', 'enlem', 'boylam', 'dogruluk_m', 'zaman', 'not', 'foto']);
     window.ORNEK_SONUC = s;
@@ -209,16 +209,16 @@
     z.clearTimeout = function () { z.iptal = true; };
     return z;
   }
-  test('olcumBaslat 15 okumada biter, secenekler dogru', function () {
+  test('olcumBaslat 60 okumada biter, secenekler dogru', function () {
     var g = sahteGeo(), z = sahteZaman(), bitti = null, sayi = 0, i;
     M.olcumBaslat(g, { sure_s: 20, setTimeout: z.setTimeout, clearTimeout: z.clearTimeout }, {
       onOkuma: function () { sayi++; }, onBitti: function (o) { bitti = o; }, onHata: function (h) { throw new Error('hata ' + h.mesaj); }
     });
     esit(g.secenek.enableHighAccuracy, true); esit(g.secenek.maximumAge, 0);
-    for (i = 0; i < 14; i++) g.gonder(5);
-    esit(bitti, null, '14 okumada bitmemeli');
+    for (i = 0; i < 59; i++) g.gonder(5);
+    esit(bitti, null, '59 okumada bitmemeli');
     g.gonder(5);
-    esit(sayi, 15); esit(bitti.length, 15); dogru(g.temizlendi, 'clearWatch'); dogru(z.iptal, 'zamanlayici iptal');
+    esit(sayi, 60); esit(bitti.length, 60); dogru(g.temizlendi, 'clearWatch'); dogru(z.iptal, 'zamanlayici iptal');
   });
   test('olcumBaslat sure dolunca biter', function () {
     var g = sahteGeo(), z = sahteZaman(), bitti = null;
@@ -262,6 +262,39 @@
     g.gonder(5); z.fn && z.fn();
     esit(cagri, 0);
   });
+  test('etkinOlcumSuresi en az 45 sn', function () {
+    esit(M.etkinOlcumSuresi({ olcum_suresi_s: 20 }), 45);
+    esit(M.etkinOlcumSuresi({ olcum_suresi_s: 90 }), 90);
+    esit(M.etkinOlcumSuresi(null), 45);
+  });
+  test('erkenBitebilirMi: okuma, sure ve son 5 okuma esigi', function () {
+    var iyi = [], i;
+    for (i = 0; i < 15; i++) iyi.push(okuma(4));
+    dogru(M.erkenBitebilirMi(iyi, 15, 5));
+    dogru(!M.erkenBitebilirMi(iyi.slice(1), 15, 5), '14 okuma yetmez');
+    dogru(!M.erkenBitebilirMi(iyi, 14.9, 5), 'sure yetmez');
+    dogru(!M.erkenBitebilirMi(iyi.concat([okuma(6)]), 20, 5), 'son okuma esik ustu');
+    dogru(!M.erkenBitebilirMi(iyi, 20, undefined), 'esik yoksa erken bitmez');
+  });
+  test('olcumBaslat dogruluk iyiyse erken biter', function () {
+    var g = sahteGeo(), z = sahteZaman(), bitti = null, t = 0, i;
+    M.olcumBaslat(g, { sure_s: 45, erken_esik_m: 5, setTimeout: z.setTimeout, clearTimeout: z.clearTimeout,
+                        simdi: function () { return t; } }, {
+      onOkuma: function () {}, onBitti: function (o) { bitti = o; }, onHata: function () { throw new Error('hata'); }
+    });
+    for (i = 0; i < 10; i++) { t += 1000; g.gonder(20); }
+    for (i = 0; i < 4; i++) { t += 1000; g.gonder(4); }
+    esit(bitti, null, '14 okuma: henuz bitmez');
+    t += 1000; g.gonder(4);
+    esit(bitti.length, 15); dogru(g.temizlendi);
+  });
+  test('okumalariSuz uzun olcumde son yariyi kullanir', function () {
+    var ok = [okuma(50), okuma(50)], i;
+    for (i = 0; i < 10; i++) ok.push(okuma(25));
+    for (i = 0; i < 10; i++) ok.push(okuma(4));
+    var r = M.okumalariSuz(ok);
+    esit(r.length, 10); dogru(r.every(function (o) { return o.dogruluk === 4; }));
+  });
   test('uctan uca: sahte okumalar -> hesap -> sinif', function () {
     var g = sahteGeo(), z = sahteZaman(), son = null, i;
     M.olcumBaslat(g, { sure_s: 20, setTimeout: z.setTimeout, clearTimeout: z.clearTimeout }, {
@@ -269,8 +302,9 @@
     });
     g.gonder(60); g.gonder(40);
     for (i = 0; i < 13; i++) g.gonder(4 + (i % 3), 40.0001, 34.0001);
+    z.fn();
     var r = M.olcumHesapla(son, 15);
-    esit(r.okuma_sayisi, 13); esit(M.dogrulukSinifi(r.dogruluk_m, M.VARSAYILAN_ESIKLER), 'iyi');
+    esit(r.okuma_sayisi, 7, '13 kullanilabilir okumanin son yarisi'); esit(M.dogrulukSinifi(r.dogruluk_m, M.VARSAYILAN_ESIKLER), 'iyi');
     yakin(r.enlem, 40.0001, 1e-6);
   });
 
