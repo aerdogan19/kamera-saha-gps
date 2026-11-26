@@ -7,7 +7,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var UYGULAMA_SURUMU = '1.1.0';
+  var UYGULAMA_SURUMU = '1.2.0';
   var PAKET_TURU = 'kamera_tespit.saha_gps_paketi';
   var SONUC_TURU = 'kamera_tespit.saha_gps_sonucu';
   var JPEG_DESENI = /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/;

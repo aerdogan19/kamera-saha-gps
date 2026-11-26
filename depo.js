@@ -1,16 +1,18 @@
 /* Saha GPS - IndexedDB deposu. Global `SahaDepo`.
    Magazalar: paketler (ozet), paket_veri (tam paket), olcumler (paket_id dizinli),
-   fotolar (olcum_id -> data URL; liste ekraninda yuklenmez), ayarlar.
+   fotolar (olcum_id -> data URL; liste ekraninda yuklenmez), ayarlar,
+   solar_kayitlar (Solar modu, olcum_id anahtarli, paket_id dizinli; fotolar kaydin icinde).
    IndexedDB yoksa (ozel gezinti vb.) oturum boyunca bellekte calisir; `kalici` false olur. */
 (function (kok) {
   'use strict';
-  var AD = 'saha_gps', SURUM = 1;
+  var AD = 'saha_gps', SURUM = 2; // 2: solar_kayitlar eklendi (mevcut magazalar KORUNUR)
   var MAGAZALAR = {
     paketler: { anahtar: 'paket_id' },
     paket_veri: { anahtar: 'paket_id' },
     olcumler: { anahtar: 'olcum_id', dizin: 'paket_id' },
     fotolar: { anahtar: 'olcum_id' },
-    ayarlar: { anahtar: 'k' }
+    ayarlar: { anahtar: 'k' },
+    solar_kayitlar: { anahtar: 'olcum_id', dizin: 'paket_id' }
   };
 
   var durum = { kalici: false, hazir: null, db: null, bellek: {} };
@@ -46,6 +48,8 @@
       var zamanAsimi = setTimeout(function () {
         if (!durum.db && !durum.kalici) { bellekHazirla(); coz(); }
       }, 4000);
+      // YUKSELTME KURALI: yalniz EKSIK magaza olusturulur; var olan magaza ASLA silinmez/yeniden kurulmaz
+      // (gonderilmemis Saha GPS olcumleri yukseltmede kaybolmasin).
       acma.onupgradeneeded = function () {
         var db = acma.result;
         Object.keys(MAGAZALAR).forEach(function (ad) {
@@ -57,7 +61,10 @@
       acma.onsuccess = function () {
         clearTimeout(zamanAsimi);
         if (Object.keys(durum.bellek).length) { acma.result.close(); return; } // gec geldi, bellek modu secildi
-        durum.db = acma.result; durum.kalici = true; coz();
+        durum.db = acma.result; durum.kalici = true;
+        // Baska sekme daha yeni surume yukseltmek isterse baglantiyi birak (yoksa yukseltme bloklanir).
+        durum.db.onversionchange = function () { try { durum.db.close(); } catch (e) { /* yut */ } durum.hazir = null; durum.db = null; durum.kalici = false; };
+        coz();
       };
       acma.onerror = function () { bellekHazirla(); coz(); };
       acma.onblocked = function () { bellekHazirla(); coz(); };
@@ -112,7 +119,9 @@
   function paketKaydet(paket) {
     var ozet = {
       paket_id: paket.paket_id, lokasyon_ad: paket.lokasyon.ad, olusturma: paket.olusturma,
-      yuklenme: new Date().toISOString(), cihaz_sayisi: paket.cihazlar.length
+      yuklenme: new Date().toISOString(),
+      tur: paket.tur === 'kamera_tespit.solar_paketi' ? 'solar' : 'saha_gps',
+      cihaz_sayisi: (paket.cihazlar || paket.kayitlar || []).length
     };
     return koy('paket_veri', { paket_id: paket.paket_id, paket: paket }).then(function () {
       return koy('paketler', ozet);
@@ -124,6 +133,17 @@
   function paketListesi() {
     return hepsi('paketler').then(function (liste) {
       return Promise.all(liste.map(function (p) {
+        if (p.tur === 'solar') {
+          return dizinle('solar_kayitlar', p.paket_id).then(function (k) {
+            var idler = {}, ekstra = 0, gonderilmemis = 0;
+            k.forEach(function (x) {
+              idler[x.kayit_id] = true;
+              if (x.yeni) ekstra++;
+              if (!x.gonderildi) gonderilmemis++;
+            });
+            return Object.assign({}, p, { olculen: Object.keys(idler).length - ekstra, ekstra: ekstra, gonderilmemis: gonderilmemis });
+          });
+        }
         return dizinle('olcumler', p.paket_id).then(function (o) {
           var macler = {}, ekstra = 0, gonderilmemis = 0;
           o.forEach(function (x) {
@@ -193,9 +213,48 @@
     }));
   }
 
+  /* ---- solar ---- */
+  // Kayit icinde iki foto (foto, gorus_foto) da durur. Ayni paket+kayit_id icin yalniz SON kayit tutulur;
+  // yeni yazma + eskilerin silinmesi TEK transaction.
+  function solarKaydet(kayit) {
+    return hazirla().then(function () {
+      if (!durum.kalici) {
+        var bm = durum.bellek.solar_kayitlar;
+        bm[kayit.olcum_id] = kayit;
+        Object.keys(bm).forEach(function (k) {
+          var x = bm[k];
+          if (x.paket_id === kayit.paket_id && x.kayit_id === kayit.kayit_id && x.olcum_id !== kayit.olcum_id) delete bm[k];
+        });
+        return;
+      }
+      var tx = durum.db.transaction('solar_kayitlar', 'readwrite');
+      var os = tx.objectStore('solar_kayitlar');
+      os.put(kayit);
+      var rq = os.index('paket_id').getAll(kayit.paket_id);
+      rq.onsuccess = function () {
+        rq.result.forEach(function (x) {
+          if (x.kayit_id === kayit.kayit_id && x.olcum_id !== kayit.olcum_id) os.delete(x.olcum_id);
+        });
+      };
+      return islemBitti(tx);
+    });
+  }
+  function solarKayitlariGetir(paketId) { return dizinle('solar_kayitlar', paketId); }
+  function solarSil(olcumId) { return sil('solar_kayitlar', olcumId); }
+  function solarGonderildiIsaretle(kayitlar, zaman) {
+    return Promise.all(kayitlar.map(function (o) {
+      return al('solar_kayitlar', o.olcum_id).then(function (g) {
+        if (!g) return;
+        g.gonderildi = zaman;
+        return koy('solar_kayitlar', g);
+      });
+    }));
+  }
+
   function paketSil(id) {
-    return olcumlerGetir(id).then(function (liste) {
-      return Promise.all(liste.map(function (x) { return olcumSil(x.olcum_id); }));
+    return Promise.all([olcumlerGetir(id), solarKayitlariGetir(id)]).then(function (s) {
+      return Promise.all(s[0].map(function (x) { return olcumSil(x.olcum_id); })
+        .concat(s[1].map(function (x) { return solarSil(x.olcum_id); })));
     }).then(function () { return sil('paket_veri', id); }).then(function () { return sil('paketler', id); });
   }
 
@@ -204,6 +263,8 @@
     ayarGetir: ayarGetir, ayarKaydet: ayarKaydet,
     paketKaydet: paketKaydet, paketGetir: paketGetir, paketListesi: paketListesi, paketSil: paketSil,
     olcumlerGetir: olcumlerGetir, olcumKaydet: olcumKaydet, olcumSil: olcumSil,
-    fotoGetir: fotoGetir, gonderildiIsaretle: gonderildiIsaretle
+    fotoGetir: fotoGetir, gonderildiIsaretle: gonderildiIsaretle,
+    solarKaydet: solarKaydet, solarKayitlariGetir: solarKayitlariGetir, solarSil: solarSil,
+    solarGonderildiIsaretle: solarGonderildiIsaretle
   };
 })(typeof self !== 'undefined' ? self : this);

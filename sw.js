@@ -4,7 +4,7 @@ importScripts('mantik.js');
 
 var SURUM = 'saha-gps-' + self.SahaMantik.UYGULAMA_SURUMU;
 var DOSYALAR = [
-  './', 'index.html', 'style.css', 'mantik.js', 'depo.js', 'app.js',
+  './', 'index.html', 'style.css', 'mantik.js', 'solar_mantik.js', 'depo.js', 'app.js',
   'manifest.webmanifest', 'ikon-192.png', 'ikon-512.png'
 ];
 

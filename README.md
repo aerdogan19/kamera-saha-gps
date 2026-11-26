@@ -13,7 +13,7 @@ kalanından (veritabanı, şifreler, WireGuard notları) AYRI ve herkese açık 
 Ana projenin deposunu Pages'e AÇMAYIN.
 
 1. GitHub'da yeni bir depo açın (ör. `saha-gps`), görünürlük **Public**.
-2. Bu klasörün içeriğini (`index.html`, `style.css`, `mantik.js`, `depo.js`, `app.js`, `sw.js`,
+2. Bu klasörün içeriğini (`index.html`, `style.css`, `mantik.js`, `solar_mantik.js`, `depo.js`, `app.js`, `sw.js`,
    `manifest.webmanifest`, `ikon-192.png`, `ikon-512.png`, `README.md`; `test/` isteğe bağlı)
    yeni deponun KÖKÜNE kopyalayın.
 3. Yeni depoda: `git init`, `git add .`, `git commit`, `git remote add origin <adres>`,
@@ -81,6 +81,55 @@ depo kullanır. Bu yüzden:
   Safari sekmesi indirmede daha güvenilirdir ama 7 gün kuralına tabidir.
 - IndexedDB açılamazsa ilk ekranda uyarı ve "Sayfayı yenile" düğmesi çıkar; bu durumda ölçümler
   kalıcı değildir.
+
+## 3. Solar modu (1.2.0, sözleşme v2)
+
+Ağda olmayan (IP/MAC/şifre yok), GSM (M2M) hattıyla çalışan solar kamera cihazları için. Masaüstünden
+"📤 Solar Paketi" dosyasını (paket sürümü 2) "Paket yükle" ile açın; sayfa paketin `tur` alanına göre Solar
+ekranlarına geçer. Eski (sürüm 1) solar paketleri reddedilir; masaüstünden yenisini üretin. Sözleşme: `docs/SOLAR_PLAN.md`.
+Kod: `solar_mantik.js` (DOM'suz mantık: paket/sonuç v2, IMEI/ICCID, model şablonları), `app.js` (ekranlar).
+
+Akış (kayıt birimi = SOLAR CİHAZ; içinde 4 kamera):
+
+1. **Liste:** her cihaz için satır + "3/4 kamera yönlü" rozeti + konum rozeti; "➕ Yeni solar cihaz".
+2. **Cihaz formu:** Kimlik (ad *, bulunduğu konum "Km 2", işin adı, model şablonu, marka, seri no), M2M hat
+   (hat no, ICCID, IMEI, operatör, tarife), Bulut (cihaz ID, hesap; ŞİFRE YOK), Güç/durum (panel, batarya, kurulum
+   tarihi, çalışma durumu), Konum (TEK GPS ölçümü), Kameralar (kanal kartları: ad, PTZ, "yön tamam/eksik"),
+   cihaz fotoğrafı, not. Model seçimi kanal şablonunu kurar (AV-S446: 4 kanal, 2-4 PTZ; O-Kam, INOX, Diğer: 4 kanal;
+   paketin `modeller` listesi öncelikli). Kanal sayısı sabit değildir ("Kanal ekle", en çok 8).
+3. **Kanal ekranı** (karta dokunun): ad, bölge, PTZ işareti, yön (hedef nokta / pusula / elle), açıklık hazır
+   değerleri + elle, menzil, görüş fotoğrafı, not. PTZ kamerada yön "ana / park yönü" demektir.
+4. **Sonucu gönder:** `solar_<saha>_<tarih>.txt`. Dosya hat no / IMEI içerir; yalnız güvenli kanaldan paylaşın.
+
+Her alan değişikliğinde ve her kanal kaydında cihaz kaydı telefona (IndexedDB) yeni bir ölçüm kimliğiyle yazılır;
+iOS sekmeyi atsa da taslak kaybolmaz. Paketten gelen cihazlarda M2M/IMEI alanları BOŞ görünür (paket bunları taşımaz);
+"Masaüstünde kayıtlı olabilir; boş bırakırsanız değişmez." Boş bırakılan alan sonuçta `null` gider ve masaüstündeki
+eski değeri ezmez. IMEI (15 hane) ve ICCID (18-20 hane) için Luhn uyumsuzluğu yalnız UYARIDIR, kaydı engellemez.
+Barkod/QR okuma ve cihazdan WiFi ile bilgi okuma yoktur (Faz 2).
+
+Saha kontrol listesi (gerçek Android + iPhone):
+
+- [ ] **Cihaz konumu:** direğin yanında "Cihaz konumunu al"; ±5 m altı yeşil. Tek ölçüm tüm kameralara uygulanır.
+- [ ] **Hedef nokta yöntemi (ÖNERİLEN):** cihaz konumu alındıktan sonra kanal ekranında, kameranın baktığı yönde 10-30 m
+      ilerideki bir noktaya yürüyüp "Hedef nokta ölç"; yön (gerçek kuzeye göre) ve menzil otomatik dolar.
+      3 m'den yakın hedef reddedilir. Cihaz konumu yeniden ölçülürse hedef noktalı kameraların yönü yeniden hesaplanır.
+- [ ] **Pusula (tahmini):** telefonu arka yüzü kameranın baktığı yöne bakacak şekilde düz ve sabit tutup
+      "Pusula oku". Sonuç "tahmini"dir (metal direk, panel, elektronik yakınında ±10-20° sapar); yönü
+      hedef noktayla doğrulayın. Pusula yönü manyetik sapma (+5,5°, pakette gelir) eklenerek gerçek kuzeye çevrilir;
+      ham manyetik değer de sonuçta saklanır.
+- [ ] **iPhone pusula izni:** "Pusula oku" düğmesine basınca iOS "Hareket ve Yön Erişimi" izni sorar (yalnız
+      dokunuşla çıkar). Reddedildiyse: Safari "aA" > Web Sitesi Ayarları > Hareket ve Yön erişimi > İzin ver, sayfayı
+      yenileyip tekrar deneyin. Ana ekran uygulamasında da aynı izin geçerlidir.
+- [ ] **Android pusula:** Chrome `deviceorientationabsolute` kullanır; veri gelmezse (eski cihaz) yönü elle girin.
+- [ ] **Elle yön:** kaydırıcı 0-359° (0 = kuzey, 90 = doğu); "Yönü temizle" ile yön boş bırakılır (masaüstünde sektör çizilmez).
+- [ ] **Açıklık:** 2,8 mm ≈ 100°, 4 mm ≈ 85°, 6 mm ≈ 55°, PTZ/bilinmiyor = 360°; elle 1-360 girilebilir.
+- [ ] **PTZ kamera:** kanal ekranında PTZ işaretli; başlık "Ana / park yönü (PTZ)" olur.
+- [ ] **M2M/IMEI:** hat no, ICCID, IMEI girilir; yanlış Luhn uyarı verir ama kayıt yapılır. Paketten gelen cihazda alanlar boştur.
+- [ ] **Fotoğraflar:** cihaz fotoğrafı + her kanal için görüş fotoğrafı (her biri ≤ 400 KB'a küçültülür).
+- [ ] **Sayfayı yenileme:** 1.2.0'a geçişte "Yeni sürüm var" bandında "Yenile"ye basın (ölçüm sürerken basmayın).
+      Veritabanı sürümü 1 > 2 yükselir; mevcut Saha GPS ölçümleri korunur. Başka sekmede eski sürüm açıksa
+      onu kapatın, yoksa yükseltme bloklanır ve sayfa "kalıcı depolama açılamadı" uyarısı verebilir.
+- [ ] **Gönderme:** `solar_<saha>_<tarih>.txt` masaüstünde "📥 Solar Sonucu" ile içe aktarılır.
 
 ## Geliştirici notları
 
