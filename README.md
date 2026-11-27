@@ -93,7 +93,7 @@ Akış (kayıt birimi = SOLAR CİHAZ; içinde 4 kamera):
 
 1. **Liste:** her cihaz için satır + "3/4 kamera yönlü" rozeti + konum rozeti; "➕ Yeni solar cihaz".
 2. **Cihaz formu:** Kimlik (ad *, bulunduğu konum "Km 2", işin adı, model şablonu, marka, seri no), M2M hat
-   (hat no, ICCID, IMEI, operatör, tarife), Bulut (cihaz ID, hesap; ŞİFRE YOK), Güç/durum (panel, batarya, kurulum
+   (hat no, ICCID, IMEI, operatör, tarife), Bulut (cihaz ID; hesap ve ŞİFRE YOK), Güç/durum (panel, batarya, kurulum
    tarihi, çalışma durumu), Konum (TEK GPS ölçümü), Kameralar (kanal kartları: ad, PTZ, "yön tamam/eksik"),
    cihaz fotoğrafı, not. Model seçimi kanal şablonunu kurar (AV-S446: 4 kanal, 2-4 PTZ; O-Kam, INOX, Diğer: 4 kanal;
    paketin `modeller` listesi öncelikli). Kanal sayısı sabit değildir ("Kanal ekle", en çok 8).
@@ -130,6 +130,22 @@ Saha kontrol listesi (gerçek Android + iPhone):
       Veritabanı sürümü 1 > 2 yükselir; mevcut Saha GPS ölçümleri korunur. Başka sekmede eski sürüm açıksa
       onu kapatın, yoksa yükseltme bloklanır ve sayfa "kalıcı depolama açılamadı" uyarısı verebilir.
 - [ ] **Gönderme:** `solar_<saha>_<tarih>.txt` masaüstünde "📥 Solar Sonucu" ile içe aktarılır.
+
+### 1.2.1 notları (Aşama A)
+
+- **Cihaz kimliği = seri no son 5 hane.** Cihaz formunda "Seri no" en üstte; yanında "Kimlik: son 5 hane" alanı
+  seri no yazılınca kendiliğinden dolar (yalnız `A-Z0-9`, büyük harf; 5 haneden kısaysa boş). Yalnız 5 hane de
+  elle yazılabilir. Listede başlığın yanında `#30516` rozeti çıkar; liste (5'ten fazla cihazda) kimlik/ad/model ile aranabilir.
+- **Sonuç sözleşmesi (surum 2, eklemeli):** her kayıtta isteğe bağlı `seri_son5` (`^[A-Z0-9]{5}$`, büyük harf;
+  geçersiz/yoksa `null`; seri_no 5+ haneli ise ondan türetilir). `seri_no` tam hâliyle kalır. Paket cihaz başına
+  `seri_son5` taşıyabilir; gelirse formda gösterilir ve korunur.
+- **Çakışma:** aynı kimlik iki farklı kayıtta girilirse uyarı çıkar (engellemez). Yeni cihaz eklerken aynı kimlikli kayıt
+  varsa "Bu cihaz zaten kayıtlı — konumunu güncellemek ister misiniz?" sorulur; onaylanırsa o kaydın `kayit_id`'siyle
+  form açılır, böylece masaüstü aynı cihazı günceller.
+- **Bulut hesabı alanı kaldırıldı** (form, sonuç, kayıt şeması); eski kayıtlardaki değer sessizce atılır. Bulut cihaz ID kalır.
+- **Fotoğraf reddi** artık kısa toast yerine kalıcı kırmızı uyarı kutusu gösterir (Kapat düğmesi; yeni başarılı
+  fotoğrafta kapanır). Okunamayan/HEIC için yönlendirici mesaj verir.
+- IndexedDB şema sürümü DEĞİŞMEDİ (2): yeni alan yalnız kayıt içeriğidir.
 
 ## Geliştirici notları
 

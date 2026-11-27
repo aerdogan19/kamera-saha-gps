@@ -309,12 +309,23 @@
   });
 
   /* ---- calistir ---- */
+  // Ek (asenkron olabilen) testler: test_solar_mantik.js window.EK_TESTLER dizisine ekler (bu dosyadan ONCE yuklenir).
+  var ek = window.EK_TESTLER || [];
+  function bitir() {
+    var toplam = testler.length + ek.length;
+    var metin = (hatalar.length ? 'TESTS FAIL ' + gecen + '/' + toplam : 'TESTS PASS ' + gecen + '/' + toplam);
+    document.title = metin;
+    document.getElementById('sonuc').textContent = metin + '\n' + hatalar.join('\n') +
+      '\nORNEK_SONUC=' + JSON.stringify(window.ORNEK_SONUC || null);
+  }
   testler.forEach(function (t) {
     try { t.fn(); gecen++; } catch (e) { hatalar.push(t.ad + ' -> ' + (e && e.message)); }
   });
-  var toplam = testler.length;
-  var metin = (hatalar.length ? 'TESTS FAIL ' + gecen + '/' + toplam : 'TESTS PASS ' + gecen + '/' + toplam);
-  document.title = metin;
-  document.getElementById('sonuc').textContent = metin + '\n' + hatalar.join('\n') +
-    '\nORNEK_SONUC=' + JSON.stringify(window.ORNEK_SONUC || null);
+  var zincir = Promise.resolve();
+  ek.forEach(function (t) {
+    zincir = zincir.then(function () { return t.fn(); }).then(function () { gecen++; }, function (e) {
+      hatalar.push(t.ad + ' -> ' + (e && e.message ? e.message : e));
+    });
+  });
+  zincir.then(bitir, bitir);
 })();

@@ -506,7 +506,7 @@
         s: 'girdi', a: { maxlength: '500', rows: '3', placeholder: ekstra ? 'Bu cihaz nedir? (zorunlu)' : 'Not (isteğe bağlı)', 'aria-label': 'Not' }
       });
       not.value = mevcut && mevcut['not'] ? mevcut['not'] : '';
-      var onizleme = el('div');
+      var onizleme = el('div'), fotoHata = fotoHataKutusu();
       var fotoGirdi = el('input', {
         s: 'gizli', a: { type: 'file', accept: 'image/*', capture: 'environment' },
         on: {
@@ -514,9 +514,9 @@
             var f = fotoGirdi.files && fotoGirdi.files[0]; fotoGirdi.value = '';
             if (!f) return;
             fotoKucult(f).then(function (url) {
-              foto = url; bosalt(onizleme);
+              foto = url; fotoHata.gizle(); bosalt(onizleme);
               var r = guvenliResim(url, 'Çekilen fotoğraf', 'buyuk-resim'); if (r) onizleme.appendChild(r);
-            }).catch(function (e) { bildir(e.message, 'hata'); });
+            }).catch(function (e) { fotoHata.goster(e); });
           }
         }
       });
@@ -543,6 +543,7 @@
       }
       panel.appendChild(not);
       panel.appendChild(el('label', { s: 'dugme', a: { tabindex: '0' } }, [document.createTextNode('📷 Fotoğraf ekle (isteğe bağlı)'), fotoGirdi]));
+      panel.appendChild(fotoHata.kutu);
       panel.appendChild(onizleme);
       panel.appendChild(el('div', { s: 'satir' }, [kaydetDugme, dugme('🔁 Yeniden ölç', '', olcumeBasla)]));
     }
@@ -692,6 +693,13 @@
       var kayitli = satirlar.filter(function (x) { return x.mevcut; }).length;
 
       var liste = el('div', { s: 'grup-liste' });
+      var solarArama = el('input', { s: 'girdi', a: { type: 'search', placeholder: 'Ara: kimlik (#30516), ad, model…', 'aria-label': 'Ara' } });
+      var kartlar = [];
+      function solarFiltre() {
+        var q = solarArama.value.trim().toLocaleLowerCase('tr').replace(/^#/, '');
+        kartlar.forEach(function (x) { x.kart.classList.toggle('gizli', !!q && x.havuz.indexOf(q) === -1); });
+      }
+      solarArama.addEventListener('input', solarFiltre);
       if (!satirlar.length) liste.appendChild(el('p', { s: 'ipucu', t: 'Henüz cihaz yok. "➕ Yeni solar cihaz" ile ekleyin.' }));
       satirlar.forEach(function (x) {
         var kaynak = x.mevcut || x.paketKaydi;
@@ -702,7 +710,9 @@
           el('div', { s: 'kart-govde' }, [
             el('div', { s: 'kart-baslik' }, [
               el('span', { s: 'simge', t: '☀', a: { 'aria-hidden': 'true' } }),
-              el('span', { t: kaynak.ad })
+              el('span', { t: kaynak.ad }),
+              S.kayitKimligi(kaynak) ? document.createTextNode(' ') : null,
+              S.kayitKimligi(kaynak) ? el('span', { s: 'rozet rozet-kabul', t: '#' + S.kayitKimligi(kaynak) }) : null
             ]),
             yer ? el('div', { t: yer }) : null,
             (kaynak.marka || kaynak.model) ? el('div', { s: 'ipucu', t: [kaynak.marka, kaynak.model].filter(function (t) { return !!t; }).join(' ') }) : null,
@@ -713,6 +723,7 @@
         kart.addEventListener('click', ac);
         kart.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ac(); } });
         liste.appendChild(kart);
+        kartlar.push({ kart: kart, havuz: [kaynak.ad, S.kayitKimligi(kaynak), kaynak.model, kaynak.seri_no, kaynak.konum_adi, kaynak.is_adi].join(' ').toLocaleLowerCase('tr') });
       });
 
       kok.appendChild(ustBar('☀ ' + paket.lokasyon.ad, 'Solar paketi: ' + tarihYaz(paket.olusturma), true));
@@ -729,6 +740,7 @@
           dugme('📤 Sonucu gönder' + (gonderilmemis ? ' (' + gonderilmemis + ' gönderilmemiş)' : ''), '',
             function () { git(function () { return ekranSolarGonder(); }); })
         ]),
+        satirlar.length > 5 ? solarArama : null,
         liste
       ]));
     });
@@ -810,8 +822,26 @@
     return { goster: goster };
   }
 
+  // Kalici foto hata kutusu: kullanici kapatana ya da yeni fotograf basarili olana kadar kalir.
+  function fotoHataMetni(e) {
+    var m = e && e.message ? e.message : '';
+    if (/okunamad/i.test(m)) return "Fotoğraf okunamadı (HEIC olabilir). Kamera ayarında 'En uyumlu' biçimi seçin ya da ekran görüntüsü yerine tekrar çekin.";
+    return m || 'Fotoğraf eklenemedi.';
+  }
+  function fotoHataKutusu() {
+    var yazi = el('span'), kutu = el('div', { s: 'hata-kutu gizli', a: { role: 'alert' } }, [
+      yazi, document.createTextNode(' '),
+      el('button', { s: 'dugme', t: 'Kapat', a: { type: 'button' }, on: { click: function () { kutu.classList.add('gizli'); } } })
+    ]);
+    return {
+      kutu: kutu,
+      goster: function (e) { yazi.textContent = fotoHataMetni(e); kutu.classList.remove('gizli'); },
+      gizle: function () { kutu.classList.add('gizli'); }
+    };
+  }
+
   function fotoAlani(etiket, f, alan, degisti) {
-    var onizleme = el('div');
+    var onizleme = el('div'), hataKutu = fotoHataKutusu();
     function ciz2() {
       bosalt(onizleme);
       var r = f[alan] ? guvenliResim(f[alan], etiket, 'buyuk-resim') : null;
@@ -826,13 +856,13 @@
         change: function () {
           var d = girdi.files && girdi.files[0]; girdi.value = '';
           if (!d) return;
-          fotoKucult(d).then(function (url) { f[alan] = url; ciz2(); if (degisti) degisti(); }).catch(function (e) { bildir(e.message, 'hata'); });
+          fotoKucult(d).then(function (url) { hataKutu.gizle(); f[alan] = url; ciz2(); if (degisti) degisti(); }).catch(function (e) { hataKutu.goster(e); });
         }
       }
     });
     ciz2();
     return el('div', {}, [
-      el('label', { s: 'dugme', a: { tabindex: '0' } }, [document.createTextNode('📷 ' + etiket), girdi]), onizleme
+      el('label', { s: 'dugme', a: { tabindex: '0' } }, [document.createTextNode('📷 ' + etiket), girdi]), hataKutu.kutu, onizleme
     ]);
   }
 
@@ -961,14 +991,14 @@
   }
 
   /* ---------- taslak (cihaz + kameralar) ---------- */
-  var SOLAR_METIN_ALANLARI = ['ad', 'konum_adi', 'is_adi', 'marka', 'model', 'seri_no', 'imei', 'bulut_cihaz_id', 'bulut_hesap',
+  var SOLAR_METIN_ALANLARI = ['ad', 'konum_adi', 'is_adi', 'marka', 'model', 'seri_no', 'imei', 'bulut_cihaz_id', 'seri_son5',
     'hat_no', 'iccid', 'operator', 'tarife', 'panel_bilgi', 'batarya_bilgi', 'kurulum_tarihi', 'calisma_durumu', 'not'];
 
   function solarTaslakKur(paket, paketKaydi, mevcut, kimlik) {
     var vars = paket.varsayilanlar, modeller = S.modelListesi(paket), f;
     if (mevcut) {
       f = JSON.parse(JSON.stringify(mevcut));
-      ['olcum_id', 'paket_id', 'zaman', 'gonderildi'].forEach(function (a) { delete f[a]; });
+      ['olcum_id', 'paket_id', 'zaman', 'gonderildi', 'bulut_hesap'].forEach(function (a) { delete f[a]; }); // bulut_hesap 1.2.1'de kaldirildi: eski kayitlardan atilir
       f.kameralar = Array.isArray(f.kameralar) ? f.kameralar : [];
       f.kameralar.forEach(function (k) { if (!k.gorus) k.gorus = S.yeniGorus(vars); });
     } else {
@@ -978,7 +1008,7 @@
       };
       if (paketKaydi) {
         f.ad = paketKaydi.ad; f.konum_adi = paketKaydi.konum_adi; f.is_adi = paketKaydi.is_adi;
-        f.marka = paketKaydi.marka; f.model = paketKaydi.model; f.seri_no = paketKaydi.seri_no;
+        f.marka = paketKaydi.marka; f.model = paketKaydi.model; f.seri_no = paketKaydi.seri_no; f.seri_son5 = paketKaydi.seri_son5 || '';
         f.kameralar = paketKaydi.kameralar.map(function (c) {
           return {
             kanal_no: c.kanal_no, ad: c.ad, bolge: c.bolge, ptz: c.ptz,
@@ -1004,9 +1034,11 @@
   // Yazimlar sirayla zincirlenir; ad bos ise (kayit kimligi/ad zorunlu) yazilmaz.
   function solarTaslakYaz(t) {
     var f = t.f;
-    if (!String(f.ad).trim()) return Promise.resolve(false);
+    if (t.iptal || !String(f.ad).trim()) return Promise.resolve(false);
     var rec = JSON.parse(JSON.stringify(f));
     rec.ad = rec.ad.trim().slice(0, S.SINIRLAR.ad);
+    delete rec.bulut_hesap;
+    rec.seri_son5 = S.seriSon5Normalize(rec.seri_son5) || S.seriSon5Turet(rec.seri_no);
     rec.kayit_id = t.kimlik; rec.olcum_id = M.yeniId(); rec.paket_id = durum.solarPaket.paket_id;
     rec.zaman = M.isoYerel(new Date()); rec.gonderildi = null;
     var p = (durum.solarZincir || Promise.resolve()).then(function () { return D.solarKaydet(rec); }).then(function () { t.kayitli = true; return true; });
@@ -1054,14 +1086,71 @@
     var isAdi = alan('is_adi', 'Yapılan işin adı (ör. Demir Stok Sahası)', 100);
     var marka = alan('marka', 'Marka', 60);
     var model = alan('model', 'Model', 60);
-    var seri = alan('seri_no', 'Seri no', 60);
+    var son5Girdi = null, son5Uyari = el('p', { s: 'ipucu uyari-yazi' }), seriOnce = f.seri_no;
+    function mevcutKimlik() { return S.seriSon5Normalize(f.seri_son5) || S.seriSon5Turet(f.seri_no); }
+    function telefondakiler() {
+      var son = solarSonKayitlar(durum.solarKayitlar || []);
+      return Object.keys(son).map(function (id) { return son[id]; });
+    }
+    function kimlikUyarisiYaz() {
+      var k = mevcutKimlik(), c = S.kimlikCakismasi(k, kimlik, telefondakiler(), paket.kayitlar);
+      son5Uyari.textContent = c ? 'Uyarı: #' + k + ' kimliği başka bir kayıtta da var (' + (c.kaynak === 'paket' ? 'pakette' : 'telefonda') + '). Aynı cihaz olabilir; kaydı engellemez.' : '';
+    }
+    // Yeni cihaz eklerken ayni kimlikli kayit varsa o kayda yonlendirir (ayni kayit_id -> masaustu ayni cihazi gunceller).
+    function kimlikYonlendir() {
+      if (paketKaydi || mevcut || t.kayitli) return false;
+      var c = S.kimlikCakismasi(mevcutKimlik(), kimlik, telefondakiler(), paket.kayitlar);
+      if (!c) return false;
+      if (!window.confirm(S.kimlikYonlendirmeMetni(mevcutKimlik(), S.taslakGirdisiVar(f)))) return false;
+      var son = solarSonKayitlar(durum.solarKayitlar || []);
+      var pk = paket.kayitlar.filter(function (k) { return k.kayit_id === c.kayit_id; })[0] || null;
+      var ml = son[c.kayit_id] || null;
+      var hedefF = solarTaslakKur(paket, pk, ml, c.kayit_id);
+      var b = S.taslagiBirlestir(hedefF, f);
+      var yeniT = { kimlik: c.kayit_id, f: b.f, kayitli: !!ml };
+      t.iptal = true; durum.solarTaslak = yeniT;
+      (durum.solarZincir || Promise.resolve()).then(function () { return D.solarKayitlariGetir(paket.paket_id); }).then(function (liste) { // eski yarim taslak kayitlari silinir
+        return Promise.all(liste.filter(function (o) { return o.kayit_id === kimlik; }).map(function (o) { return D.solarSil(o.olcum_id); }));
+      }).then(function () { return b.tasinan.length ? solarTaslakYaz(yeniT) : null; }).then(function () { return D.solarKayitlariGetir(paket.paket_id); }).then(function (liste) {
+        durum.solarKayitlar = liste; durum.solarTaslak = yeniT;
+        if (b.tasinan.length) bildir('Taşındı: ' + b.tasinan.join(', ') + '.', 'tamam');
+        degistir(function () { return ekranSolarKayit(pk, solarSonKayitlar(liste)[c.kayit_id] || null, null); });
+      }).catch(hataGoster);
+      return true;
+    }
+    var seri = alan('seri_no', 'Seri no (cihaz kimliği: son 5 hane)', 60, {
+      degisti: function () {
+        var onceki = S.seriSon5Turet(seriOnce), mevcut5 = S.seriSon5Normalize(f.seri_son5);
+        if (!mevcut5 || mevcut5 === onceki) f.seri_son5 = S.seriSon5Turet(f.seri_no);
+        seriOnce = f.seri_no;
+        if (son5Girdi) son5Girdi.value = f.seri_son5 || '';
+        kimlikUyarisiYaz();
+        if (kimlikYonlendir()) return;
+      }
+    });
+    seri.girdi.addEventListener('input', function () { // yazarken turet; telefona yazim 'change'te
+      var onceki = S.seriSon5Turet(seriOnce), mevcut5 = S.seriSon5Normalize(f.seri_son5);
+      if (!mevcut5 || mevcut5 === onceki) { f.seri_son5 = S.seriSon5Turet(seri.girdi.value); if (son5Girdi) son5Girdi.value = f.seri_son5; }
+      seriOnce = seri.girdi.value;
+    });
+    var son5 = alan('seri_son5', 'Kimlik: son 5 hane (seri no yazınca dolar; yalnız 5 hane de yazabilirsiniz)', 5, {
+      yer: 'ör. 30516',
+      degisti: function () {
+        f.seri_son5 = S.seriSon5Normalize(f.seri_son5) || '';
+        son5Girdi.value = f.seri_son5; kimlikUyarisiYaz();
+        kimlikYonlendir();
+      }
+    });
+    son5Girdi = son5.girdi;
+    son5Girdi.setAttribute('autocapitalize', 'characters');
+    son5Girdi.addEventListener('input', function () { son5Girdi.value = son5Girdi.value.toUpperCase(); f.seri_son5 = son5Girdi.value; });
+    kimlikUyarisiYaz();
     var hat = alan('hat_no', 'Hat numarası (M2M SIM)', 30, { tip: 'tel', mod: 'tel' });
     var iccid = alan('iccid', 'ICCID (SIM kart no, 18-20 hane)', 24, { mod: 'numeric', uyari: S.iccidUyarisi });
     var imei = alan('imei', 'IMEI (15 hane)', 20, { mod: 'numeric', uyari: S.imeiUyarisi });
     var operator = alan('operator', 'Operatör', 60);
     var tarife = alan('tarife', 'Tarife / paket', 60);
     var bulutId = alan('bulut_cihaz_id', 'Bulut cihaz ID', 60);
-    var bulutHesap = alan('bulut_hesap', 'Bulut hesabı (kullanıcı adı / e-posta)', 100);
     var panel = alan('panel_bilgi', 'Güneş paneli (ör. 2 x 100 W)', 120);
     var batarya = alan('batarya_bilgi', 'Batarya (ör. 100 Ah)', 120);
     var kurulum = alan('kurulum_tarihi', 'Kurulum tarihi', 10, { tip: 'date' });
@@ -1171,6 +1260,9 @@
         if ((sinif === 'kotu' || sinif === 'red') &&
             !window.confirm('Konum doğruluğu zayıf (±' + sayiYaz(f.dogruluk_m) + ' m). Yine de kaydedilsin mi?')) return;
       }
+      if (kimlikYonlendir()) return;
+      var cakisma = S.kimlikCakismasi(mevcutKimlik(), kimlik, telefondakiler(), paket.kayitlar);
+      if (cakisma) bildir('Uyarı: #' + mevcutKimlik() + ' kimliği başka bir kayıtta da var; kayıt yine yapılıyor.', 'uyari');
       var yonsuz = f.kameralar.filter(function (k) { return !S.kanalYonluMu(k); }).length;
       if (yonsuz && !window.confirm(yonsuz + ' kameranın yönü girilmedi; masaüstünde bu kameralar için sektör çizilmeyecek. Yine de kaydedilsin mi?')) return;
       solarTaslakYaz(t).then(function () { bildir('Kaydedildi.', 'tamam'); geri(); }).catch(hataGoster);
@@ -1193,12 +1285,12 @@
     durum.temizlik = function () { temizlikler.forEach(function (x) { try { x(); } catch (e) { /* yut */ } }); };
     kok.appendChild(ustBar(f.ad || 'Yeni solar cihaz', paket.lokasyon.ad, true));
     kok.appendChild(el('main', { s: 'icerik' }, [
-      el('section', { s: 'kart-bolum' }, [el('h2', { t: 'Kimlik' }), ad.kutu, konumAdi.kutu, isAdi.kutu,
+      el('section', { s: 'kart-bolum' }, [el('h2', { t: 'Kimlik' }), seri.kutu, son5.kutu, son5Uyari, ad.kutu, konumAdi.kutu, isAdi.kutu,
         el('label', { s: 'etiket', t: 'Model şablonu (kanal sayısını ve PTZ kanallarını belirler)', a: { for: 'sc-model-sec' } }), modelSec,
-        marka.kutu, model.kutu, seri.kutu]),
+        marka.kutu, model.kutu]),
       el('section', { s: 'kart-bolum' }, [el('h2', { t: 'M2M hat (SIM)' }), hat.kutu, iccid.kutu, imei.kutu, operator.kutu, tarife.kutu, m2mNotu,
         el('p', { s: 'ipucu', t: 'Hat no ve IMEI sonuç dosyasına yazılır; dosyayı yalnız güvenli kanaldan paylaşın.' })]),
-      el('section', { s: 'kart-bolum' }, [el('h2', { t: 'Bulut' }), bulutId.kutu, bulutHesap.kutu,
+      el('section', { s: 'kart-bolum' }, [el('h2', { t: 'Bulut' }), bulutId.kutu,
         el('p', { s: 'ipucu', t: 'Bulut şifresi toplanmaz; buraya yazmayın.' })]),
       el('section', { s: 'kart-bolum' }, [el('h2', { t: 'Güç / durum' }), panel.kutu, batarya.kutu, kurulum.kutu,
         el('label', { s: 'etiket', t: 'Çalışma durumu', a: { for: 'sc-durum' } }), durumSec]),

@@ -332,6 +332,81 @@
   }
 
   /* ---------- paket dogrulama (surum 2) ---------- */
+  /* ---------- cihaz kimligi: seri no son 5 hane ---------- */
+  // Biçim: ^[A-Z0-9]{5}$ (buyuk harf). Seri no'dan turetme: yalniz [A-Za-z0-9] kalir, son 5 hane; 5'ten kisaysa ''.
+  var SON5_DESENI = /^[A-Z0-9]{5}$/;
+  function seriSon5Turet(seri) {
+    var t = String(seri === null || seri === undefined ? '' : seri).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    return t.length >= 5 ? t.slice(-5) : '';
+  }
+  // Elle yazilan / paketten gelen degeri normalize eder; gecersizse ''.
+  function seriSon5Normalize(x) {
+    if (typeof x !== 'string') return '';
+    var t = x.trim().toUpperCase();
+    return SON5_DESENI.test(t) ? t : '';
+  }
+  // Kayittaki gecerli kimlik: acik seri_son5, yoksa seri_no'dan turetilen.
+  function kayitKimligi(k) {
+    if (!k) return '';
+    return seriSon5Normalize(k.seri_son5) || seriSon5Turet(k.seri_no);
+  }
+  // Ayni kimlikli BASKA kayit var mi? telefonKayitlari: kayit_id basina son kayitlar; paketKayitlari: paket.kayitlar.
+  // Doner: {kaynak:'telefon'|'paket', kayit_id} | null
+  function kimlikCakismasi(son5, kendiKayitId, telefonKayitlari, paketKayitlari) {
+    if (!SON5_DESENI.test(son5 || '')) return null;
+    var benim = String(kendiKayitId || '').toLowerCase(), i, k;
+    var tel = telefonKayitlari || [];
+    for (i = 0; i < tel.length; i++) {
+      k = tel[i];
+      if (k && String(k.kayit_id).toLowerCase() !== benim && kayitKimligi(k) === son5) return { kaynak: 'telefon', kayit_id: k.kayit_id };
+    }
+    var pk = paketKayitlari || [];
+    for (i = 0; i < pk.length; i++) {
+      k = pk[i];
+      if (k && String(k.kayit_id).toLowerCase() !== benim && kayitKimligi(k) === son5) return { kaynak: 'paket', kayit_id: k.kayit_id };
+    }
+    return null;
+  }
+
+  // Taslakta kullanici girdisi (olcum / foto / kamera yonu-fotosu / not) var mi? (ad, seri vb. metinler sayilmaz)
+  function taslakGirdisiVar(f) {
+    if (!f) return false;
+    if (sonluMu(f.enlem) || f.foto || (typeof f['not'] === 'string' && f['not'].trim())) return true;
+    return (f.kameralar || []).some(function (k) {
+      return !!k && (kanalYonluMu(k) || !!k.gorus_foto || (typeof k['not'] === 'string' && k['not'].trim()) || !!(k.gorus && k.gorus.hedef));
+    });
+  }
+  // Yonlendirmede kaynak taslagin girdisini hedefe tasir: YALNIZ hedefin bos alanlari doldurulur, dolu alan ezilmez.
+  // hedef/kaynak: cihaz formu nesneleri (degistirilmez). Doner {f: birlesmis kopya, tasinan: ['konum','foto','kanal 2 yonu',...]}
+  function taslagiBirlestir(hedef, kaynak) {
+    var f = JSON.parse(JSON.stringify(hedef)), tasinan = [];
+    if (!sonluMu(f.enlem) && sonluMu(kaynak.enlem) && sonluMu(kaynak.boylam)) {
+      f.enlem = kaynak.enlem; f.boylam = kaynak.boylam; f.dogruluk_m = kaynak.dogruluk_m;
+      f.okuma_sayisi = kaynak.okuma_sayisi; f.sure_s = kaynak.sure_s; tasinan.push('konum');
+    }
+    if (!f.foto && kaynak.foto) { f.foto = kaynak.foto; tasinan.push('cihaz fotoğrafı'); }
+    if (!(typeof f['not'] === 'string' && f['not'].trim()) && typeof kaynak['not'] === 'string' && kaynak['not'].trim()) { f['not'] = kaynak['not']; tasinan.push('not'); }
+    f.kameralar = Array.isArray(f.kameralar) ? f.kameralar : [];
+    (kaynak.kameralar || []).forEach(function (kk) {
+      if (!kk) return;
+      var kopya = JSON.parse(JSON.stringify(kk));
+      var h = f.kameralar.filter(function (x) { return x.kanal_no === kk.kanal_no; })[0];
+      if (!h) {
+        if ((kanalYonluMu(kk) || kk.gorus_foto) && f.kameralar.length < MAKS_KANAL) { f.kameralar.push(kopya); tasinan.push('kanal ' + kk.kanal_no); }
+        return;
+      }
+      if (!kanalYonluMu(h) && kanalYonluMu(kk)) { h.gorus = kopya.gorus; tasinan.push('kanal ' + kk.kanal_no + ' yönü'); }
+      if (!h.gorus_foto && kk.gorus_foto) { h.gorus_foto = kk.gorus_foto; tasinan.push('kanal ' + kk.kanal_no + ' fotoğrafı'); }
+    });
+    f.kameralar.sort(function (a, b) { return a.kanal_no - b.kanal_no; });
+    return { f: f, tasinan: tasinan };
+  }
+  function kimlikYonlendirmeMetni(son5, girdiVar) {
+    var m = 'Bu cihaz zaten kayıtlı (#' + son5 + ') — konumunu güncellemek ister misiniz?';
+    if (girdiVar) m += '\n\nBu ekranda girdiğiniz ölçüm/fotoğraf/yön bilgileri mevcut kaydın BOŞ alanlarına taşınır; kayıtta dolu olan alanlar değişmez, taşınamayanlar atılır. Emin değilseniz "İptal" ile vazgeçin.';
+    return m;
+  }
+
   function paketKamerasi(c, varsayilan) {
     if (!c || typeof c !== 'object' || !kanalNoGecerli(c.kanal_no)) return null;
     return {
@@ -363,6 +438,7 @@
       konum_adi: metin(k.konum_adi, SINIRLAR.konum_adi), is_adi: metin(k.is_adi, SINIRLAR.is_adi),
       enlem: konumVar ? k.enlem : null, boylam: konumVar ? k.boylam : null,
       marka: metin(k.marka, SINIRLAR.marka), model: metin(k.model, SINIRLAR.model), seri_no: metin(k.seri_no, SINIRLAR.seri_no),
+      seri_son5: seriSon5Normalize(k.seri_son5) || null,
       kameralar: kameralar
     };
   }
@@ -517,7 +593,8 @@
       sure_s: konumVar && sonluMu(o.sure_s) ? o.sure_s : null,
       zaman: String(o.zaman || ''),
       marka: metinNull(o.marka, SINIRLAR.marka), model: metinNull(o.model, SINIRLAR.model), seri_no: metinNull(o.seri_no, SINIRLAR.seri_no),
-      imei: rakamNull(o.imei, 20), bulut_cihaz_id: metinNull(o.bulut_cihaz_id, SINIRLAR.marka), bulut_hesap: metinNull(o.bulut_hesap, SINIRLAR.ad),
+      imei: rakamNull(o.imei, 20), bulut_cihaz_id: metinNull(o.bulut_cihaz_id, SINIRLAR.marka),
+      seri_son5: seriSon5Normalize(o.seri_son5) || seriSon5Turet(o.seri_no) || null,
       hat_no: metinNull(o.hat_no, SINIRLAR.hat_no), iccid: rakamNull(o.iccid, 20),
       operator: metinNull(o.operator, SINIRLAR.marka), tarife: metinNull(o.tarife, SINIRLAR.marka),
       panel_bilgi: metinNull(o.panel_bilgi, SINIRLAR.donanim), batarya_bilgi: metinNull(o.batarya_bilgi, SINIRLAR.donanim),
@@ -568,6 +645,8 @@
     yeniKanal: yeniKanal, yeniGorus: yeniGorus, kanalSablonuUygula: kanalSablonuUygula, kanalBosMu: kanalBosMu,
     kanalYonluMu: kanalYonluMu, yonOzeti: yonOzeti,
     luhnGecerliMi: luhnGecerliMi, imeiGecerliMi: imeiGecerliMi, iccidGecerliMi: iccidGecerliMi,
+    seriSon5Turet: seriSon5Turet, seriSon5Normalize: seriSon5Normalize, kayitKimligi: kayitKimligi, kimlikCakismasi: kimlikCakismasi,
+    taslakGirdisiVar: taslakGirdisiVar, taslagiBirlestir: taslagiBirlestir, kimlikYonlendirmeMetni: kimlikYonlendirmeMetni,
     imeiUyarisi: imeiUyarisi, iccidUyarisi: iccidUyarisi, yalnizRakam: yalnizRakam,
     hedefYonuHesapla: hedefYonuHesapla, manyetiktenGercege: manyetiktenGercege,
     dairselOrtalama: dairselOrtalama, dairselSapma: dairselSapma, yonAdi: yonAdi,
